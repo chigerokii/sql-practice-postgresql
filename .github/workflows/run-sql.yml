@@ -1,0 +1,86 @@
+name: run-sql
+
+# Поднимает PostgreSQL, загружает учебные базы (Pagila и демобазу «Авиаперевозки»),
+# прогоняет все запросы и сохраняет результаты аналитических запросов в results/.
+
+on:
+  push:
+    paths:
+      - "**.sql"
+      - ".github/workflows/run-sql.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Load Pagila (DVD rental)
+        run: |
+          git clone --depth 1 https://github.com/devrimgunduz/pagila.git /tmp/pagila
+          createdb dvdrental
+          psql -q -d dvdrental -f /tmp/pagila/pagila-schema.sql > /dev/null
+          psql -q -d dvdrental -f /tmp/pagila/pagila-data.sql > /dev/null
+          psql -d dvdrental -c "select min(payment_date), max(payment_date), count(*) from payment"
+
+      - name: Load demo database «Авиаперевозки»
+        run: |
+          for url in \
+            https://edu.postgrespro.ru/demo-small-20170815.zip \
+            https://edu.postgrespro.ru/demo-small.zip \
+            https://edu.postgrespro.com/demo-small-en-20170815.zip; do
+            if curl -fsSL -o /tmp/demo.zip "$url"; then echo "loaded $url"; break; fi
+          done
+          unzip -o -q /tmp/demo.zip -d /tmp/demo
+          psql -q -d postgres -f "$(ls /tmp/demo/*.sql | head -1)" > /dev/null
+          psql -d demo -c "select bookings.now(), count(*) from bookings.flights"
+
+      - name: Run practice queries (DVD rental)
+        run: |
+          for f in dvdrental/*.sql; do
+            echo "::group::$f"
+            psql -v ON_ERROR_STOP=1 -q -d dvdrental -f "$f" > /dev/null
+            echo "::endgroup::"
+          done
+
+      - name: Run control tests (bookings)
+        run: |
+          for f in bookings/*.sql; do
+            echo "::group::$f"
+            psql -v ON_ERROR_STOP=1 -q -d demo -f "$f" > /dev/null
+            echo "::endgroup::"
+          done
+
+      - name: Run analysis queries and save results
+        run: |
+          mkdir -p results
+          for f in analysis/dvdrental_*.sql; do
+            psql -v ON_ERROR_STOP=1 -q --csv -d dvdrental -f "$f" > "results/$(basename "$f" .sql).csv"
+          done
+          for f in analysis/bookings_*.sql; do
+            psql -v ON_ERROR_STOP=1 -q --csv -d demo -f "$f" > "results/$(basename "$f" .sql).csv"
+          done
+          head -n 5 results/*.csv
+
+      - name: Commit results
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add results
+          git diff --cached --quiet || (git commit -m "Update query results [skip ci]" && git push)
