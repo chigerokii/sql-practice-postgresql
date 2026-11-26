@@ -2,7 +2,7 @@
 
 Мои решения по курсу «Системы управления базами данных» (СПбГЭУ, 7 семестр, 2025). Плюс несколько аналитических запросов
 поверх тех же баз: по ним построены графики ниже.
-Всё прогоняется в GitHub Actions на настоящих базах: [run-sql.yml](.github/workflows/run-sql.yml) поднимает PostgreSQL 16,
+Всё прогоняется в GitHub Actions на настоящих базах: [run-sql.yml](.github/workflows/run-sql.yml) поднимает PostgreSQL 18,
 загружает [Pagila](https://github.com/devrimgunduz/pagila) (DVD rental) и демобазу Postgres Pro «Авиаперевозки»,
 выполняет каждый файл с `ON_ERROR_STOP` и сохраняет результаты аналитических запросов в [`results/`](results).
 
